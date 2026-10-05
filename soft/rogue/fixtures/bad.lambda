@@ -1,0 +1,1 @@
+(lambda () (begin (set! *alive* 1) (list 4 0 2)))

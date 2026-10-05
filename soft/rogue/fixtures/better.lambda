@@ -1,0 +1,1 @@
+(lambda () (list 5 0 2))
