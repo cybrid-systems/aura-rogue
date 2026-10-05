@@ -108,7 +108,7 @@
           (display "KEEP mid=")
           (display (number->string *keep-mid*))
           (display " reason=")
-          (display *drop-reason*)
+          (display *keep-reason*)
           (newline)
           (display "DROP mid=")
           (display (number->string *drop-mid*))
