@@ -1,0 +1,74 @@
+;; Propose → gate → race vs current main → KEEP or DROP/heal.
+;; Host writes a (lambda () (list loot-hp loot-atk ai-div)) file. Soft does not speak HTTP.
+;; rg:shadow is the current main pack. rg:law is the trial.
+;; KEEP only when the trial score is strictly greater. A tie DROPs.
+
+(load "/workspace/aura-rogue/soft/rogue/hot.aura")
+
+(define (rg:propose-score! clean)
+  (let ((pair (rg:race-thunks!
+               (lambda () (rg:score-pack (rg:shadow)))
+               (lambda () (rg:score-pack (rg:law))))))
+    (let ((base (car pair))
+          (trial (car (cdr pair))))
+      (set! *base-last* base)
+      (set! *trial-last* trial)
+      (display "RACE base=")
+      (display (rg:nstr base))
+      (display " trial=")
+      (display (rg:nstr trial))
+      (newline)
+      (if (> trial base)
+          (begin
+            (set! *main-body* clean)
+            (set! *main-score* trial)
+            (set! *main-name* "rg:law")
+            (set! *keep-reason* "higher-score-stamp")
+            (set! *propose-tag* "propose_keep")
+            (display "KEEP reason=higher-score-stamp")
+            (newline)
+            (display "PROPOSE tag=propose_keep")
+            (newline)
+            (rg:stamp-pack! (rg:law) "rg:law")
+            (list #t "propose_keep"))
+          (begin
+            (hot-strategy:heal!)
+            (set! *drop-reason* "lower-score-rollback")
+            (set! *propose-tag* "propose_drop")
+            (display "HEAL name=rg:law reason=score")
+            (newline)
+            (display "DROP reason=lower-score-rollback")
+            (newline)
+            (display "PROPOSE tag=propose_drop")
+            (newline)
+            (list #f "propose_drop"))))))
+
+(define (rg:propose-body! body)
+  (let ((clean (if (string? body) (string-trim body) "")))
+    (let ((r (rg:apply-body! clean "propose")))
+      (cond
+        ((and (pair? r) (pair? (cdr r)) (equal? (car (cdr r)) "swap"))
+         (rg:propose-score! clean))
+        ((and (pair? r) (pair? (cdr r)) (equal? (car (cdr r)) "probe"))
+         (set! *propose-tag* "propose_heal")
+         (display "PROPOSE tag=propose_heal")
+         (newline)
+         (list #f "propose_heal"))
+        (#t
+         (set! *propose-tag* "propose_reject")
+         (display "PROPOSE tag=propose_reject")
+         (newline)
+         (list #f "propose_reject"))))))
+
+(define (rg:propose-file! path)
+  (rg:sync-main!)
+  (let ((body (try (read-file path) (catch (e) #f))))
+    (if (not (string? body))
+        (begin
+          (display "GATE reject reason=read")
+          (newline)
+          (set! *propose-tag* "propose_reject")
+          (display "PROPOSE tag=propose_reject")
+          (newline)
+          (list #f "propose_reject"))
+        (rg:propose-body! body))))

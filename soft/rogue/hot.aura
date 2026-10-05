@@ -1,0 +1,139 @@
+;; Hot rule-pack slot + honest dual worldline helpers for M1/M2.
+;; rg:law / rg:shadow return (loot-hp loot-atk ai-div). swap! / heal! are std/hot-strategy.
+;; fiber race helpers live in rules.aura; this file does not fake fiber_live.
+;; M0 does not load this file.
+
+(require "std/hot-strategy" all:)
+(require "std/string" all:)
+
+(define *greedy-body* "(lambda () (list 1 2 1))")
+(define *safe-body* "(lambda () (list 4 0 2))")
+(define *tanky-body* "(lambda () (list 6 1 2))")
+(define *main-body* *safe-body*)
+(define *strategy-seeded* 0)
+(define *base-last* 0)
+(define *trial-last* 0)
+(define *propose-tag* "boot")
+
+(define *seed-src*
+  (string-append
+   "(define (rg:law) (list 4 0 2))\n"
+   "(define (rg:shadow) (list 4 0 2))\n"))
+
+(define (rg:strategy-seed!)
+  (if (= *strategy-seeded* 1)
+      (list #t "seed")
+      (let ((sc (try (set-code *seed-src*) (catch (e) e))))
+        (if (not (equal? sc #t))
+            (list #f "seed")
+            (begin
+              (eval-current)
+              (hot-strategy:register! "rg:law" *safe-body*)
+              (set! *main-body* *safe-body*)
+              (set! *strategy-seeded* 1)
+              (set! *race-backend* 0)
+              (set! *race-spawned* 0)
+              (set! *race-joined* 0)
+              (if (and (pair? (try (rg:law) (catch (e) #f)))
+                       (pair? (try (rg:shadow) (catch (e) #f))))
+                  (list #t "seed")
+                  (list #f "probe")))))))
+
+(define (rg:bad-body? s)
+  (or (string-contains? s "set!")
+      (string-contains? s "vector-set!")
+      (string-contains? s "display")
+      (string-contains? s "mutate")
+      (string-contains? s "eval")
+      (string-contains? s "load")
+      (string-contains? s "shell")
+      (string-contains? s "http")
+      (string-contains? s "rg:reset")
+      (string-contains? s "rg:tick")
+      (string-contains? s "rg:race")
+      (string-contains? s "fiber:")))
+
+(define (rg:body-ok? body)
+  (and (string? body)
+       (> (string-length body) 10)
+       (< (string-length body) 2000)
+       (string-prefix? body "(lambda")
+       (not (rg:bad-body? body))))
+
+(define (rg:pack-ok? p)
+  (and (pair? p)
+       (pair? (cdr p))
+       (pair? (cdr (cdr p)))
+       (null? (cdr (cdr (cdr p))))
+       (number? (rg:pack-lhp p))
+       (number? (rg:pack-latk p))
+       (number? (rg:pack-ai p))
+       (>= (rg:pack-lhp p) 0)
+       (>= (rg:pack-latk p) 0)
+       (>= (rg:pack-ai p) 1)
+       (<= (rg:pack-lhp p) 16)
+       (<= (rg:pack-latk p) 16)
+       (<= (rg:pack-ai p) 16)))
+
+(define (rg:probe-law!)
+  (let ((v (try (rg:law) (catch (e) #f))))
+    (rg:pack-ok? v)))
+
+(define (rg:apply-law-params!)
+  (let ((p (rg:law)))
+    (set! *loot-hp* (+ (rg:pack-lhp p) *loot-boost*))
+    (set! *loot-atk* (rg:pack-latk p))
+    (set! *ai-div* (rg:pack-ai p))
+    p))
+
+(define (rg:live-tick! tag)
+  (rg:apply-law-params!)
+  (rg:tick! tag))
+
+;; Install a lambda string into rg:law. Does not touch rg:shadow.
+;; Gate reject leaves the slot alone. A bad probe heal!s the pre-swap snap.
+(define (rg:apply-body! body reason)
+  (let ((clean (if (string? body) (string-trim body) "")))
+    (cond
+      ((not (rg:body-ok? clean))
+       (display "GATE reject reason=gate")
+       (newline)
+       (list #f "gate"))
+      (#t
+       (let ((sw (hot-strategy:swap! "rg:law" clean reason)))
+         (if (not (and (pair? sw) (equal? (car sw) #t)))
+             (begin
+               (display "GATE reject reason=swap")
+               (newline)
+               (list #f "swap"))
+             (if (rg:probe-law!)
+                 (begin
+                   (display "SWAP name=rg:law room=")
+                   (display (number->string *alive*))
+                   (display " reason=")
+                   (display reason)
+                   (newline)
+                   (list #t "swap"))
+                 (begin
+                   (hot-strategy:heal!)
+                   (display "HEAL name=rg:law room=")
+                   (display (number->string *alive*))
+                   (display " reason=probe")
+                   (newline)
+                   (list #f "probe")))))))))
+
+(define (rg:sync-main!)
+  (hot-strategy:swap! "rg:shadow" *main-body* "shadow")
+  (hot-strategy:swap! "rg:law" *main-body* "choose")
+  *main-body*)
+
+(define (rg:pack-from-body body)
+  (let ((clean (if (string? body) (string-trim body) "")))
+    (if (not (rg:body-ok? clean))
+        #f
+        (let ((sw (hot-strategy:swap! "rg:law" clean "probe-pack")))
+          (if (not (and (pair? sw) (equal? (car sw) #t)))
+              #f
+              (let ((p (try (rg:law) (catch (e) #f))))
+                (hot-strategy:heal!)
+                (if (rg:pack-ok? p) p #f)))))))
