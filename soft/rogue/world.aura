@@ -1,6 +1,7 @@
-;; aura-rogue M0 — tiny Soft FlatAST dungeon.
+;; aura-rogue M0/M1 — tiny Soft FlatAST dungeon.
 ;; Rooms are AST nodes. Player HP/ATK are integers. No C viewport.
 ;; Two drop/AI packs race the same seed. Longer survival KEEPs.
+;; Live tick / MUTATE / pack helpers are for M1+; M0 uses rg:sim only.
 
 (define *rooms* 4)
 (define *seed* 20261005)
@@ -15,6 +16,7 @@
 (define *loot-atk* 0)
 (define *ai-div* 1)
 (define *slot-tag* "none")
+(define *loot-boost* 0)
 
 (define (rg:dialect)
   "soft-rogue-m0")
@@ -139,3 +141,64 @@
 
 (define (rg:clarity-of s)
   (modulo s 1000000))
+
+;; --- M1 live mid-run path (M0 does not call these) ---
+
+(define (rg:reset!)
+  (let ((rng (rg:seed-step *seed*)))
+    (set! *hp* (+ 10 (modulo rng 3)))
+    (set! *atk* (+ 2 (modulo rng 2)))
+    (set! *room* 0)
+    (set! *alive* 0)
+    (set! *clarity* 0)
+    (set! *ticks* 0)
+    (set! *dead* 0)
+    (set! *loot-boost* 0)
+    0))
+
+(define (rg:live-score)
+  (+ (* *alive* 1000000) *clarity*))
+
+;; One in-play room on the live player using current *loot-hp*/*loot-atk*/*ai-div*.
+;; Returns the new alive count. Does not retcon prior rooms. MUTATE at room 2.
+(define (rg:tick! tag)
+  (set! *slot-tag* tag)
+  (if (= *dead* 1)
+      *alive*
+      (if (>= *alive* *rooms*)
+          *alive*
+          (let* ((en (rg:enemy *alive*))
+                 (ft (rg:fight *hp* *atk* (rg:ehp en) (rg:eatk en) *ai-div*))
+                 (hp1 (car ft))
+                 (rnds (car (cdr ft)))
+                 (dead (car (cdr (cdr ft)))))
+            (set! *ticks* (+ *ticks* rnds))
+            (if (= dead 1)
+                (begin
+                  (set! *dead* 1)
+                  (set! *hp* (if (< hp1 0) 0 hp1))
+                  (set! *clarity* *hp*)
+                  *alive*)
+                (begin
+                  (set! *hp* (+ hp1 *loot-hp*))
+                  (set! *atk* (+ *atk* *loot-atk*))
+                  (set! *alive* (+ *alive* 1))
+                  (set! *room* *alive*)
+                  (set! *clarity* *hp*)
+                  (if (= *alive* 2)
+                      (begin
+                        (set! *loot-boost* 1)
+                        (display "MUTATE room=2 loot-boost=1 slot=")
+                        (display tag)
+                        (newline)))
+                  *alive*))))))
+
+(define (rg:pack-lhp p) (car p))
+(define (rg:pack-latk p) (car (cdr p)))
+(define (rg:pack-ai p) (car (cdr (cdr p))))
+
+(define (rg:score-pack p)
+  (rg:score (rg:pack-lhp p) (rg:pack-latk p) (rg:pack-ai p)))
+
+(define (rg:stamp-pack! p tag)
+  (rg:stamp! (rg:pack-lhp p) (rg:pack-latk p) (rg:pack-ai p) tag))
