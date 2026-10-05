@@ -1,0 +1,26 @@
+;; One host-written lambda. Any honest gate result is success.
+;; Missing file or a Soft error is not. HTTP stays in the host script.
+(load "/workspace/aura-rogue/soft/rogue/world.aura")
+(load "/workspace/aura-rogue/soft/rogue/rules.aura")
+(load "/workspace/aura-rogue/soft/rogue/propose.aura")
+
+(define (live-tag? s)
+  (or (string=? s "propose_keep")
+      (or (string=? s "propose_drop")
+          (or (string=? s "propose_heal")
+              (string=? s "propose_reject")))))
+
+(define (main)
+  (let ((seeded (rg:strategy-seed!)))
+    (if (not (and (pair? seeded) (equal? (car seeded) #t)))
+        (display "ROGUE_M2_PROPOSE_LIVE_FAIL seed\n")
+        (let ((path (getenv "ROGUE_PROPOSE_FILE")))
+          (if (not (and (string? path) (> (string-length path) 0)))
+              (display "ROGUE_M2_PROPOSE_LIVE_FAIL path\n")
+              (let ((r (rg:propose-file! path)))
+                (rg:stamp-world!)
+                (if (and (pair? r) (pair? (cdr r)) (live-tag? (car (cdr r))))
+                    (display "ROGUE_M2_PROPOSE_LIVE_OK\n")
+                    (display "ROGUE_M2_PROPOSE_LIVE_FAIL\n"))))))))
+
+(main)
