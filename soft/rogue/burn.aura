@@ -1,0 +1,46 @@
+;; Multi-round propose → gate → play. Rooms default to 4 (same as M0).
+;; Each round reads ROGUE_ROUND_DIR/<n>.lambda. KEEP only on a strict improvement.
+(load "/workspace/aura-rogue/soft/rogue/world.aura")
+(load "/workspace/aura-rogue/soft/rogue/rules.aura")
+(load "/workspace/aura-rogue/soft/rogue/propose.aura")
+
+(define (rg:env-int name fallback)
+  (let ((raw (getenv name)))
+    (if (and (string? raw) (> (string-length raw) 0))
+        (let ((n (string->number raw)))
+          (if (number? n) n fallback))
+        fallback)))
+
+(define (rg:burn!)
+  (let ((dir (getenv "ROGUE_ROUND_DIR"))
+        (rounds (rg:env-int "ROGUE_BURN_ROUNDS" 3))
+        (rms (rg:env-int "ROGUE_ROOMS" 4)))
+    (set! *rooms* rms)
+    (display "BURN rounds=")
+    (display (number->string rounds))
+    (display " rooms=")
+    (display (number->string rms))
+    (newline)
+    (if (not (and (string? dir) (> (string-length dir) 0)))
+        (display "ROGUE_BURN_FAIL dir\n")
+        (let ((seeded (rg:strategy-seed!)))
+          (if (not (and (pair? seeded) (equal? (car seeded) #t)))
+              (display "ROGUE_BURN_FAIL seed\n")
+              (begin
+                (let loop ((i 1))
+                  (if (> i rounds)
+                      0
+                      (begin
+                        (display "BURN_ROUND=")
+                        (display (number->string i))
+                        (newline)
+                        (rg:propose-file!
+                         (string-append dir "/" (number->string i) ".lambda"))
+                        (loop (+ i 1)))))
+                (rg:stamp-world!)
+                (display "MAIN score=")
+                (display (rg:nstr *main-score*))
+                (newline)
+                (display "ROGUE_BURN_OK\n")))))))
+
+(rg:burn!)
