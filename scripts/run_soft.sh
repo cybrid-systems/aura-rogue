@@ -26,5 +26,9 @@ exec "${DOCKER[@]}" run --rm -i --entrypoint /usr/local/bin/gosu \
   -e AURA_SANDBOX=off \
   -e AURA_BIN=/workspace/aura-grok/build/aura \
   -e "ROGUE_ROOMS=${ROGUE_ROOMS:-}" \
+  -e "ROGUE_BURN_ROUNDS=${ROGUE_BURN_ROUNDS:-}" \
+  -e "ROGUE_ROUND_DIR=${ROGUE_ROUND_DIR:-}" \
+  -e "ROGUE_PROPOSE_FILE=${ROGUE_PROPOSE_FILE:-}" \
+  -e "ROGUE_PROPOSE=${ROGUE_PROPOSE:-}" \
   "${IMG}" \
   dev /usr/bin/stdbuf -oL -eL /workspace/aura-grok/build/aura "$SRC" "$@"
