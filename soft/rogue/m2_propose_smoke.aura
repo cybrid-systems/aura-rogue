@@ -1,0 +1,113 @@
+;; Fixture propose. No HTTP. Gate, heal, DROP, KEEP.
+;; Rooms stay 4 so the scores match the M0 tape law.
+(load "/workspace/aura-rogue/soft/rogue/world.aura")
+(load "/workspace/aura-rogue/soft/rogue/rules.aura")
+(load "/workspace/aura-rogue/soft/rogue/propose.aura")
+
+(define *fail* 0)
+
+(define (expect tag got want)
+  (display tag)
+  (display "=")
+  (display (rg:nstr got))
+  (if (= got want)
+      (display " OK")
+      (begin
+        (display " WANT=")
+        (display (rg:nstr want))
+        (set! *fail* (+ *fail* 1))))
+  (newline)
+  got)
+
+(define (tag? r want)
+  (and (pair? r) (pair? (cdr r)) (equal? (car (cdr r)) want)))
+
+(define (pack= p lhp latk ai)
+  (and (rg:pack-ok? p)
+       (= (rg:pack-lhp p) lhp)
+       (= (rg:pack-latk p) latk)
+       (= (rg:pack-ai p) ai)))
+
+(define (main)
+  (let ((seeded (rg:strategy-seed!)))
+    (if (not (and (pair? seeded) (equal? (car seeded) #t)))
+        (display "ROGUE_M2_PROPOSE_FAIL seed\n")
+        (begin
+          (let ((bad (rg:propose-file!
+                      "/workspace/aura-rogue/soft/rogue/fixtures/bad.lambda")))
+            (if (not (tag? bad "propose_reject"))
+                (begin
+                  (display "REJECT_FAIL")
+                  (newline)
+                  (set! *fail* (+ *fail* 1)))))
+          (if (not (pack= (rg:law) 4 0 2))
+              (begin
+                (display "SLOT_FAIL reject")
+                (newline)
+                (set! *fail* (+ *fail* 1))))
+          (let ((ugly (rg:propose-file!
+                       "/workspace/aura-rogue/soft/rogue/fixtures/ugly.lambda")))
+            (if (not (tag? ugly "propose_heal"))
+                (begin
+                  (display "HEAL_FAIL")
+                  (newline)
+                  (set! *fail* (+ *fail* 1)))))
+          (if (not (pack= (rg:law) 4 0 2))
+              (begin
+                (display "SLOT_FAIL heal")
+                (newline)
+                (set! *fail* (+ *fail* 1))))
+          (let ((worse (rg:propose-file!
+                        "/workspace/aura-rogue/soft/rogue/fixtures/worse.lambda")))
+            (if (not (tag? worse "propose_drop"))
+                (begin
+                  (display "DROP_FAIL")
+                  (newline)
+                  (set! *fail* (+ *fail* 1)))))
+          (expect "WORSE_BASE" *base-last* 4000010)
+          (expect "WORSE_TRIAL" *trial-last* 3000000)
+          (if (not (pack= (rg:law) 4 0 2))
+              (begin
+                (display "SLOT_FAIL drop")
+                (newline)
+                (set! *fail* (+ *fail* 1))))
+          (if (not (string=? *main-body* *safe-body*))
+              (begin
+                (display "MAIN_FAIL drop")
+                (newline)
+                (set! *fail* (+ *fail* 1))))
+          (let ((better (rg:propose-file!
+                         "/workspace/aura-rogue/soft/rogue/fixtures/better.lambda")))
+            (if (not (tag? better "propose_keep"))
+                (begin
+                  (display "KEEP_FAIL")
+                  (newline)
+                  (set! *fail* (+ *fail* 1)))))
+          (expect "BETTER_BASE" *base-last* 4000010)
+          (expect "BETTER_TRIAL" *trial-last* 4000014)
+          (expect "MAIN_SCORE" *main-score* 4000014)
+          (expect "LIVE_SCORE" (rg:live-score) 4000014)
+          (if (not (pack= (rg:law) 5 0 2))
+              (begin
+                (display "SLOT_FAIL keep")
+                (newline)
+                (set! *fail* (+ *fail* 1))))
+          (rg:stamp-world!)
+          (if (string=? *world-line* "fiber_live")
+              (if (not (and (> *race-backend* 0)
+                            (= *race-joined* *race-spawned*)
+                            (= *race-spawned* 4)))
+                  (begin
+                    (display "WORLD_FAIL")
+                    (newline)
+                    (set! *fail* (+ *fail* 1))))
+              (if (not (string=? *world-line* "host-sequential"))
+                  (begin
+                    (display "WORLD_FAIL")
+                    (newline)
+                    (set! *fail* (+ *fail* 1)))))
+          (if (= *fail* 0)
+              (display "ROGUE_M2_PROPOSE_OK\n")
+              (display "ROGUE_M2_PROPOSE_FAIL\n"))))))
+
+(main)
