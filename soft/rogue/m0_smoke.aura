@@ -1,0 +1,87 @@
+;; Dual rule-pack race. Prints KEEP/DROP and ROGUE_M0_OK.
+;; fiber_live is accepted only when joins equal spawns and backend > 0.
+(load "/workspace/aura-rogue/soft/rogue/world.aura")
+(load "/workspace/aura-rogue/soft/rogue/rules.aura")
+
+(define *fail* 0)
+
+(define (expect tag got want)
+  (display tag)
+  (display "=")
+  (display (rg:nstr got))
+  (if (= got want)
+      (display " OK")
+      (begin
+        (display " WANT=")
+        (display (rg:nstr want))
+        (set! *fail* (+ *fail* 1))))
+  (newline)
+  got)
+
+(display "DIALECT=")
+(display (rg:dialect))
+(newline)
+
+(expect "ROOMS" *rooms* 4)
+(expect "SEED" *seed* 20261005)
+(expect "RNG" (rg:seed-step *seed*) 34567)
+(rg:race!)
+(rg:audit!)
+
+(expect "SCORE_GREEDY" *score-greedy* 3000000)
+(expect "SCORE_SAFE" *score-safe* 4000010)
+(expect "ALIVE_GREEDY" (rg:alive-of *score-greedy*) 3)
+(expect "ALIVE_SAFE" (rg:alive-of *score-safe*) 4)
+(expect "CLARITY_SAFE" (rg:clarity-of *score-safe*) 10)
+(expect "KEEP_MID" *keep-mid* 2)
+(expect "DROP_MID" *drop-mid* 1)
+(expect "MAIN_MID" *main-mid* 2)
+(expect "MAIN_SCORE" *main-score* 4000010)
+(expect "LIVE_SCORE" *main-score* *score-safe*)
+(expect "ALIVE" *alive* 4)
+(expect "CLARITY" *clarity* 10)
+(expect "HP" *hp* 10)
+(expect "ATK" *atk* 3)
+(expect "LOOT_HP" *loot-hp* 4)
+(expect "LOOT_ATK" *loot-atk* 0)
+(expect "AI_DIV" *ai-div* 2)
+
+(if (string=? *world-line* "fiber_live")
+    (if (not (and (> *race-backend* 0)
+                  (> *race-spawned* 0)
+                  (= *race-joined* *race-spawned*)))
+        (begin
+          (display "WORLD_FAIL")
+          (newline)
+          (set! *fail* (+ *fail* 1))))
+    (if (not (string=? *world-line* "host-sequential"))
+        (begin
+          (display "WORLD_FAIL")
+          (newline)
+          (set! *fail* (+ *fail* 1)))))
+
+(if (not (and (> *score-safe* *score-greedy*)
+              (= *keep-mid* 2)
+              (= *drop-mid* 1)
+              (string=? *main-name* "rules-safe")
+              (string=? *keep-reason* "longer-survival-stamp")
+              (string=? *drop-reason* "shorter-survival-rollback")))
+    (begin
+      (display "KEEP_FAIL")
+      (newline)
+      (set! *fail* (+ *fail* 1))))
+
+;; Loser pack must not be the main world.
+(if (or (= *loot-atk* 2) (= *ai-div* 1) (= *loot-hp* 1))
+    (begin
+      (display "STAMP_FAIL")
+      (newline)
+      (set! *fail* (+ *fail* 1))))
+
+(if (= *fail* 0)
+    (begin
+      (display "ROGUE_M0_OK")
+      (newline))
+    (begin
+      (display "ROGUE_M0_FAIL")
+      (newline)))
