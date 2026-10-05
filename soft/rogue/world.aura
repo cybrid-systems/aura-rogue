@@ -1,0 +1,141 @@
+;; aura-rogue M0 — tiny Soft FlatAST dungeon.
+;; Rooms are AST nodes. Player HP/ATK are integers. No C viewport.
+;; Two drop/AI packs race the same seed. Longer survival KEEPs.
+
+(define *rooms* 4)
+(define *seed* 20261005)
+(define *hp* 0)
+(define *atk* 0)
+(define *room* 0)
+(define *alive* 0)
+(define *clarity* 0)
+(define *ticks* 0)
+(define *dead* 0)
+(define *loot-hp* 0)
+(define *loot-atk* 0)
+(define *ai-div* 1)
+(define *slot-tag* "none")
+
+(define (rg:dialect)
+  "soft-rogue-m0")
+
+(define (rg:nstr n)
+  (if (< n 0)
+      (string-append "-" (number->string (- 0 n)))
+      (number->string n)))
+
+;; Toward-zero integer division.
+(define (rg:qdiv n d)
+  (if (< n 0)
+      (- 0 (quotient (- 0 n) d))
+      (quotient n d)))
+
+(define (rg:seed-step seed)
+  (modulo (+ (* seed 75) 74) 65537))
+
+;; Enemy stats for room index r: (ehp eatk).
+;; Fixed table so the seed only picks the start loadout.
+(define (rg:enemy r)
+  (cond
+    ((= r 0) (list 5 2))
+    ((= r 1) (list 7 3))
+    ((= r 2) (list 10 4))
+    ((= r 3) (list 14 5))
+    (#t (list 20 6))))
+
+(define (rg:ehp e) (car e))
+(define (rg:eatk e) (car (cdr e)))
+
+;; One exchange. Player strikes first. Returns (php ehp dead rounds)
+;; dead=1 when player HP <= 0. rounds is always 1 for this call.
+(define (rg:exchange php patk ehp eatk)
+  (let ((ehp1 (- ehp patk)))
+    (if (<= ehp1 0)
+        (list php ehp1 0 1)
+        (let ((php1 (- php eatk)))
+          (if (<= php1 0)
+              (list php1 ehp1 1 1)
+              (list php1 ehp1 0 1))))))
+
+;; Fight one room. Returns (php rounds dead).
+;; eatk is divided by ai-div (timid AI uses 2; aggressive uses 1).
+(define (rg:fight php patk ehp raw-atk ai-div)
+  (let ((eatk (let ((a (rg:qdiv raw-atk ai-div)))
+                (if (< a 1) 1 a))))
+    (let loop ((hp php) (eh ehp) (rounds 0))
+      (if (or (<= hp 0) (<= eh 0))
+          (list hp rounds (if (<= hp 0) 1 0))
+          (let ((st (rg:exchange hp patk eh eatk)))
+            (loop (car st)
+                  (car (cdr st))
+                  (+ rounds (car (cdr (cdr (cdr st)))))))))))
+
+(define (rg:tape! room hp atk tag)
+  (display "TAPE room=")
+  (display (number->string room))
+  (display " hp=")
+  (display (number->string hp))
+  (display " atk=")
+  (display (number->string atk))
+  (display " alive=")
+  (display (number->string room))
+  (display " slot=")
+  (display tag)
+  (newline)
+  0)
+
+;; Pure play. tape=1 prints TAPE after each cleared room on the host replay.
+;; Returns (score alive clarity hp atk ticks).
+;; score = alive * 1000000 + clarity. clarity = final hp (capped < 1000000).
+;; Death is not committed: the killing room does not increment alive.
+(define (rg:sim loot-hp loot-atk ai-div tag tape)
+  (let ((rng (rg:seed-step *seed*)))
+    (let loop ((r 0)
+               (hp (+ 10 (modulo rng 3)))
+               (atk (+ 2 (modulo rng 2)))
+               (alive 0)
+               (ticks 0))
+      (if (>= r *rooms*)
+          (list (+ (* alive 1000000) hp) alive hp hp atk ticks)
+          (let* ((en (rg:enemy r))
+                 (ft (rg:fight hp atk (rg:ehp en) (rg:eatk en) ai-div))
+                 (hp1 (car ft))
+                 (rnds (car (cdr ft)))
+                 (dead (car (cdr (cdr ft))))
+                 (ticks1 (+ ticks rnds)))
+            (if (= dead 1)
+                (list (+ (* alive 1000000) (if (< hp1 0) 0 hp1))
+                      alive
+                      (if (< hp1 0) 0 hp1)
+                      (if (< hp1 0) 0 hp1)
+                      atk
+                      ticks1)
+                (let ((hp2 (+ hp1 loot-hp))
+                      (atk2 (+ atk loot-atk)))
+                  (if (and (= tape 1))
+                      (rg:tape! (+ r 1) hp2 atk2 tag))
+                  (loop (+ r 1) hp2 atk2 (+ alive 1) ticks1))))))))
+
+(define (rg:score loot-hp loot-atk ai-div)
+  (car (rg:sim loot-hp loot-atk ai-div "race" 0)))
+
+(define (rg:stamp! loot-hp loot-atk ai-div tag)
+  (let ((st (rg:sim loot-hp loot-atk ai-div tag 1)))
+    (set! *loot-hp* loot-hp)
+    (set! *loot-atk* loot-atk)
+    (set! *ai-div* ai-div)
+    (set! *slot-tag* tag)
+    (set! *alive* (car (cdr st)))
+    (set! *clarity* (car (cdr (cdr st))))
+    (set! *hp* (car (cdr (cdr (cdr st)))))
+    (set! *atk* (car (cdr (cdr (cdr (cdr st))))))
+    (set! *ticks* (car (cdr (cdr (cdr (cdr (cdr st)))))))
+    (set! *room* *alive*)
+    (set! *dead* (if (< *alive* *rooms*) 1 0))
+    (car st)))
+
+(define (rg:alive-of s)
+  (quotient s 1000000))
+
+(define (rg:clarity-of s)
+  (modulo s 1000000))
