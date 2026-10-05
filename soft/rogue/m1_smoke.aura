@@ -1,0 +1,140 @@
+;; Mid-run hot-strategy swap/heal, then an honest dual race.
+;; Prints SWAP, HEAL, MUTATE, KEEP, DROP, and ROGUE_M1_OK.
+;; fiber_live only if the one race joined both fibers. M0 is a different file.
+(load "/workspace/aura-rogue/soft/rogue/world.aura")
+(load "/workspace/aura-rogue/soft/rogue/rules.aura")
+(load "/workspace/aura-rogue/soft/rogue/hot.aura")
+
+(define *fail* 0)
+
+(define (expect tag got want)
+  (display tag)
+  (display "=")
+  (display (rg:nstr got))
+  (if (= got want)
+      (display " OK")
+      (begin
+        (display " WANT=")
+        (display (rg:nstr want))
+        (set! *fail* (+ *fail* 1))))
+  (newline)
+  got)
+
+(define (tag? r want)
+  (and (pair? r) (pair? (cdr r)) (equal? (car (cdr r)) want)))
+
+(define (pack= p lhp latk ai)
+  (and (rg:pack-ok? p)
+       (= (rg:pack-lhp p) lhp)
+       (= (rg:pack-latk p) latk)
+       (= (rg:pack-ai p) ai)))
+
+(define (main)
+  (let ((seeded (rg:strategy-seed!)))
+    (if (not (and (pair? seeded) (equal? (car seeded) #t)))
+        (display "ROGUE_M1_FAIL seed\n")
+        (begin
+          (rg:reset!)
+          (rg:apply-law-params!)
+          (let loop ((i 0))
+            (if (< i 2)
+                (begin
+                  (rg:live-tick! "rg:law")
+                  (loop (+ i 1)))))
+          (let ((bad (rg:apply-body!
+                      "(lambda () (begin (set! *alive* 1) (list 4 0 2)))"
+                      "bad")))
+            (if (not (tag? bad "gate"))
+                (begin
+                  (display "GATE_FAIL")
+                  (newline)
+                  (set! *fail* (+ *fail* 1)))))
+          (expect "ROOM_PRE" *alive* 2)
+          (if (not (pack= (rg:law) 4 0 2))
+              (begin
+                (display "SLOT_FAIL pre")
+                (newline)
+                (set! *fail* (+ *fail* 1))))
+          (let ((sw (rg:apply-body! *tanky-body* "mid-swap")))
+            (if (not (tag? sw "swap"))
+                (begin
+                  (display "SWAP_FAIL")
+                  (newline)
+                  (set! *fail* (+ *fail* 1)))))
+          (expect "ROOM_SWAP" *alive* 2)
+          (if (not (pack= (rg:law) 6 1 2))
+              (begin
+                (display "SLOT_FAIL swap")
+                (newline)
+                (set! *fail* (+ *fail* 1))))
+          (let loop ((i 0))
+            (if (< i 1)
+                (begin
+                  (rg:live-tick! "rg:law")
+                  (loop (+ i 1)))))
+          (expect "ROOM_CONT" *alive* 3)
+          (let ((ugly (rg:apply-body!
+                       "(lambda () (list 4 0))"
+                       "ugly")))
+            (if (not (tag? ugly "probe"))
+                (begin
+                  (display "HEAL_FAIL")
+                  (newline)
+                  (set! *fail* (+ *fail* 1)))))
+          (expect "ROOM_HEAL" *alive* 3)
+          ;; Last good snap is the tanky body, not the seed safe.
+          (if (not (pack= (rg:law) 6 1 2))
+              (begin
+                (display "SLOT_FAIL heal")
+                (newline)
+                (set! *fail* (+ *fail* 1))))
+          (expect "LOOT_BOOST" *loot-boost* 1)
+          ;; Dual race is still greedy vs safe on the pure sim path.
+          (set! *race-backend* 0)
+          (set! *race-spawned* 0)
+          (set! *race-joined* 0)
+          (set! *world-line* "host-sequential")
+          (let ((pair (rg:race-thunks!
+                       (lambda () (rules-greedy))
+                       (lambda () (rules-safe)))))
+            (rg:decide! (car pair) (car (cdr pair))))
+          (rg:finish-world!)
+          (display "RACE greedy=")
+          (display (rg:nstr *score-greedy*))
+          (display " safe=")
+          (display (rg:nstr *score-safe*))
+          (newline)
+          (rg:stamp-world!)
+          (display "KEEP mid=")
+          (display (number->string *keep-mid*))
+          (display " reason=")
+          (display *drop-reason*)
+          (newline)
+          (display "DROP mid=")
+          (display (number->string *drop-mid*))
+          (display " reason=")
+          (display *drop-reason*)
+          (newline)
+          (expect "SCORE_GREEDY" *score-greedy* 3000000)
+          (expect "SCORE_SAFE" *score-safe* 4000010)
+          (expect "MAIN_SCORE" *main-score* 4000010)
+          (expect "KEEP_MID" *keep-mid* 2)
+          (expect "DROP_MID" *drop-mid* 1)
+          (if (string=? *world-line* "fiber_live")
+              (if (not (and (> *race-backend* 0)
+                            (> *race-spawned* 0)
+                            (= *race-joined* *race-spawned*)))
+                  (begin
+                    (display "WORLD_FAIL")
+                    (newline)
+                    (set! *fail* (+ *fail* 1))))
+              (if (not (string=? *world-line* "host-sequential"))
+                  (begin
+                    (display "WORLD_FAIL")
+                    (newline)
+                    (set! *fail* (+ *fail* 1)))))
+          (if (= *fail* 0)
+              (display "ROGUE_M1_OK\n")
+              (display "ROGUE_M1_FAIL\n"))))))
+
+(main)
