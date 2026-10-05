@@ -106,7 +106,12 @@ would use `higher-clarity-stamp`. A full tie keeps greedy.
 - No invented Soft APIs. Dialect matches aura-arena fiber race.
 - No secrets in the tree.
 
-## Later
+## M1 / M2
 
-M1 can hot-swap the loot/AI slot mid-dungeon. M2 can gate a proposed
-`(lambda () (list loot-hp loot-atk ai-div))`. Those are not M0.
+M1 registers `rg:law` as a real `std/hot-strategy` slot, swaps and heals
+mid-dungeon, prints `MUTATE room=2 loot-boost=1`, then races greedy vs safe
+with the same honest `fiber_live` rule as M0. Detail: `docs/m1.md`.
+
+M2 gates a host-written `(lambda () (list loot-hp loot-atk ai-div))` from
+MiniMax (`api.minimax.cn` only), KEEPs only on a strict score improvement,
+else DROP + `heal!`. Detail: `docs/m2.md`. No keys in the tree.
